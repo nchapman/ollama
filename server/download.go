@@ -129,7 +129,6 @@ func (b *blobDownload) Prepare(ctx context.Context, requestURL *url.URL, opts *R
 
 func (b *blobDownload) Run(ctx context.Context, requestURL *url.URL, opts *RegistryOptions) error {
 	defer blobDownloadManager.Delete(b.Digest)
-
 	ctx, b.CancelFunc = context.WithCancel(ctx)
 
 	file, err := os.OpenFile(b.Name+"-partial", os.O_CREATE|os.O_RDWR, 0644)
@@ -165,7 +164,7 @@ func (b *blobDownload) Run(ctx context.Context, requestURL *url.URL, opts *Regis
 				}
 			}
 
-			return errors.New("max retries exceeded")
+			return errMaxRetriesExceeded
 		})
 	}
 
