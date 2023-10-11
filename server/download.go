@@ -31,11 +31,13 @@ type blobDownload struct {
 
 	Total     int64
 	Completed atomic.Int64
-	done      bool
 
 	Parts []*blobDownloadPart
 
 	context.CancelFunc
+
+	done       bool
+	err        error
 	references atomic.Int32
 }
 
@@ -125,13 +127,14 @@ func (b *blobDownload) Prepare(ctx context.Context, requestURL *url.URL, opts *R
 	return nil
 }
 
-func (b *blobDownload) Run(ctx context.Context, requestURL *url.URL, opts *RegistryOptions) (err error) {
+func (b *blobDownload) Run(ctx context.Context, requestURL *url.URL, opts *RegistryOptions) error {
 	defer blobDownloadManager.Delete(b.Digest)
 
 	ctx, b.CancelFunc = context.WithCancel(ctx)
 
 	file, err := os.OpenFile(b.Name+"-partial", os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
+		b.err = err
 		return err
 	}
 	defer file.Close()
@@ -167,21 +170,25 @@ func (b *blobDownload) Run(ctx context.Context, requestURL *url.URL, opts *Regis
 	}
 
 	if err := g.Wait(); err != nil {
+		b.err = err
 		return err
 	}
 
 	// explicitly close the file so we can rename it
 	if err := file.Close(); err != nil {
+		b.err = err
 		return err
 	}
 
 	for i := range b.Parts {
 		if err := os.Remove(file.Name() + "-" + strconv.Itoa(i)); err != nil {
+			b.err = err
 			return err
 		}
 	}
 
 	if err := os.Rename(file.Name(), b.Name); err != nil {
+		b.err = err
 		return err
 	}
 
@@ -285,8 +292,8 @@ func (b *blobDownload) Wait(ctx context.Context, fn func(api.ProgressResponse)) 
 			Completed: b.Completed.Load(),
 		})
 
-		if b.done {
-			return nil
+		if b.done || b.err != nil {
+			return b.err
 		}
 	}
 }
